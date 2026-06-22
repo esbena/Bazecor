@@ -6,8 +6,15 @@ const onThemeChange = () => () => {
   sendToRenderer("darkTheme-update", nativeTheme.shouldUseDarkColors);
 };
 
+const nativeThemeUpdatedHandler = onThemeChange();
+
 const configureNativeTheme = () => {
-  nativeTheme.on("updated", onThemeChange());
+  nativeTheme.off("updated", nativeThemeUpdatedHandler);
+  nativeTheme.on("updated", nativeThemeUpdatedHandler);
+};
+
+const removeNativeTheme = () => {
+  nativeTheme.off("updated", nativeThemeUpdatedHandler);
 };
 
 const setTheme = () => {
@@ -21,4 +28,4 @@ const setTheme = () => {
   nativeTheme.themeSource = darkMode as NativeTheme["themeSource"];
 };
 
-export { configureNativeTheme, setTheme, onThemeChange };
+export { configureNativeTheme, removeNativeTheme, setTheme, onThemeChange };
