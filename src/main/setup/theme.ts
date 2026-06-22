@@ -2,13 +2,19 @@ import { nativeTheme, NativeTheme } from "electron";
 import Store from "../managers/Store";
 import sendToRenderer from "../utils/sendToRenderer";
 
-const onThemeChange = () => {
+const onThemeChange = () => () => {
   sendToRenderer("darkTheme-update", nativeTheme.shouldUseDarkColors);
 };
 
+const nativeThemeUpdatedHandler = onThemeChange();
+
 const configureNativeTheme = () => {
-  nativeTheme.off("updated", onThemeChange);
-  nativeTheme.on("updated", onThemeChange);
+  nativeTheme.off("updated", nativeThemeUpdatedHandler);
+  nativeTheme.on("updated", nativeThemeUpdatedHandler);
+};
+
+const removeNativeTheme = () => {
+  nativeTheme.off("updated", nativeThemeUpdatedHandler);
 };
 
 const setTheme = () => {
@@ -22,4 +28,4 @@ const setTheme = () => {
   nativeTheme.themeSource = darkMode as NativeTheme["themeSource"];
 };
 
-export { configureNativeTheme, setTheme, onThemeChange };
+export { configureNativeTheme, removeNativeTheme, setTheme, onThemeChange };
