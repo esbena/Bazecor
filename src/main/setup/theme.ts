@@ -2,12 +2,13 @@ import { nativeTheme, NativeTheme } from "electron";
 import Store from "../managers/Store";
 import sendToRenderer from "../utils/sendToRenderer";
 
-const onThemeChange = () => () => {
+const onThemeChange = () => {
   sendToRenderer("darkTheme-update", nativeTheme.shouldUseDarkColors);
 };
 
 const configureNativeTheme = () => {
-  nativeTheme.on("updated", onThemeChange());
+  nativeTheme.off("updated", onThemeChange);
+  nativeTheme.on("updated", onThemeChange);
 };
 
 const setTheme = () => {
