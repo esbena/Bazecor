@@ -195,6 +195,16 @@ export interface EditorLayers {
   layerLockDescription: string;
   exportToPdf: string;
   layerToCopy: string;
+  printLayerTitle: string;
+  printSuperkeysTitle: string;
+  printMacrosTitle: string;
+  printNameColumn: string;
+  printSaveDialogTitle: string;
+  printSaveDialogButton: string;
+  printPdfSavedTitle: string;
+  printPdfSavedContent: string;
+  printPdfFailedTitle: string;
+  printPdfFailedContent: string;
 }
 
 export interface EditorMacros {

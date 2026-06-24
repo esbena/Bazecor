@@ -1,4 +1,5 @@
-import { ipcMain, app, dialog, shell, nativeTheme, systemPreferences } from "electron";
+import { ipcMain, app, dialog, shell, nativeTheme, systemPreferences, BrowserWindow } from "electron";
+import fs from "fs";
 import { uIOhook } from "uiohook-napi";
 import path from "path";
 import log from "electron-log/main";
@@ -14,6 +15,7 @@ const removeIPCs = () => {
   ipcMain.removeHandler("open-dialog");
   ipcMain.removeHandler("is-devtools-opened");
   ipcMain.removeHandler("save-dialog");
+  ipcMain.removeHandler("print-to-pdf");
   ipcMain.removeHandler("manage-devtools");
   ipcMain.removeHandler("get-userPath");
   ipcMain.removeHandler("get-Locale");
@@ -59,6 +61,23 @@ const configureIPCs = () => {
     return data;
   });
 
+  ipcMain.handle("print-to-pdf", async (event, filePath: string) => {
+    const window = BrowserWindow.fromWebContents(event.sender) || Window.getWindow();
+    if (!window) {
+      throw new Error("No window is available to print");
+    }
+
+    const pdfData = await window.webContents.printToPDF({
+      landscape: true,
+      printBackground: true,
+      pageSize: "A4",
+      margins: { marginType: "none" },
+      preferCSSPageSize: true,
+    });
+    fs.writeFileSync(filePath, pdfData);
+    return filePath;
+  });
+
   ipcMain.handle("is-devtools-opened", async () => {
     const window = Window.getWindow();
     const data = window.webContents.isDevToolsOpened();
@@ -74,7 +93,7 @@ const configureIPCs = () => {
     }
   });
 
-  ipcMain.handle("get-userPath", (event, path) => app.getPath(path));
+  ipcMain.handle("get-userPath", (event, requestedPath) => app.getPath(requestedPath));
 
   ipcMain.handle("get-defaultBackupPath", (event, fileName) => {
     const appPath = app.getAppPath();
