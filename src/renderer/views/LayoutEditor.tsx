@@ -54,6 +54,8 @@ import Store from "@Renderer/utils/Store";
 import getLanguage from "@Renderer/utils/language";
 import { ClearLayerDialog } from "@Renderer/components/molecules/CustomModal/ClearLayerDialog";
 import { DygmaDeviceInfoType } from "@Renderer/types/dygmaDefs";
+import { getLayerRenderData, LayerRenderData } from "@Renderer/utils/layoutLayerData";
+import { formatPrintKeyLabel } from "@Renderer/utils/printKeyLabel";
 import BlankTable from "../../api/keymap/db/blanks";
 import Keymap, { KeymapDB } from "../../api/keymap";
 import { rgb2w } from "../../api/color";
@@ -70,6 +72,19 @@ import {
 } from "../../api/parsers";
 
 const store = Store.getStore();
+const printBodyClass = "bazecor-print-layouts";
+const printNoKeyCode = BlankTable.keys[0].code;
+const noopKeySelect = () => {};
+const withoutPrintNoKeyLabels = (key: KeyType): KeyType =>
+  key.keyCode === printNoKeyCode
+    ? {
+        ...key,
+        label: "",
+        extraLabel: "",
+        verbose: "",
+      }
+    : key;
+const printableName = (name?: string) => name?.trim() || "";
 
 const Styles = Styled.div`
 .keyboard-editor {
@@ -411,6 +426,7 @@ const Styles = Styled.div`
 `;
 
 type ModeType = "keyboard" | "color";
+type PrintableLayer = LayerRenderData & { name: string };
 
 const LayoutEditor = (props: LayoutEditorProps) => {
   const defaultLayerNames = useMemo(
@@ -488,6 +504,8 @@ const LayoutEditor = (props: LayoutEditorProps) => {
   const [currentLanguageLayout, setCurrentLanguageLayout] = useState("english");
   const [showMacroModal, setShowMacroModal] = useState(false);
   const [showNeuronModal, setShowNeuronModal] = useState(false);
+  const [printRenderActive, setPrintRenderActive] = useState(false);
+  const [printPdfPath, setPrintPdfPath] = useState("");
   const [leftSideModified, setLeftSideModified] = useState(false);
   const [isWireless, setIsWireless] = useState(false);
 
@@ -537,8 +555,13 @@ const LayoutEditor = (props: LayoutEditorProps) => {
 
     // For underglow, prefer using ledsLeft/ledsRight arrays if available and not empty, otherwise fall back to rows * columns
     let underglowLEDs = 0;
-    if (currentDevice.device.keyboardUnderglow.ledsLeft?.length > 0 || currentDevice.device.keyboardUnderglow.ledsRight?.length > 0) {
-      underglowLEDs = (currentDevice.device.keyboardUnderglow.ledsLeft?.length || 0) + (currentDevice.device.keyboardUnderglow.ledsRight?.length || 0);
+    if (
+      currentDevice.device.keyboardUnderglow.ledsLeft?.length > 0 ||
+      currentDevice.device.keyboardUnderglow.ledsRight?.length > 0
+    ) {
+      underglowLEDs =
+        (currentDevice.device.keyboardUnderglow.ledsLeft?.length || 0) +
+        (currentDevice.device.keyboardUnderglow.ledsRight?.length || 0);
     } else {
       underglowLEDs = currentDevice.device.keyboardUnderglow.rows * currentDevice.device.keyboardUnderglow.columns;
     }
@@ -1480,18 +1503,26 @@ const LayoutEditor = (props: LayoutEditorProps) => {
     setModeselect(data);
   };
 
-  const exportToPdf = () => {
-    toast.info(
-      <ToastMessage
-        title="Feature not yet ready!"
-        content="The feature is not yet ready. its being worked on!"
-        icon={<IconArrowUpWithLine />}
-      />,
-      {
-        autoClose: 2000,
-        icon: "",
-      },
-    );
+  const exportToPdf = async () => {
+    const defaultPdfName = `${deviceName || "Bazecor"}-layouts.pdf`;
+    const selectedPath = await ipcRenderer.invoke("save-dialog", {
+      title: i18n.editor.layers.printSaveDialogTitle,
+      defaultPath: defaultPdfName,
+      buttonLabel: i18n.editor.layers.printSaveDialogButton,
+      filters: [
+        { name: "PDF", extensions: ["pdf"] },
+        { name: i18n.dialog.allFiles, extensions: ["*"] },
+      ],
+    });
+
+    if (typeof selectedPath !== "string") {
+      log.info("user closed SaveDialog");
+      return;
+    }
+
+    const pdfPath = selectedPath.toLowerCase().endsWith(".pdf") ? selectedPath : `${selectedPath}.pdf`;
+    setPrintPdfPath(pdfPath);
+    setPrintRenderActive(true);
   };
 
   const resetScroll = () => {
@@ -1557,74 +1588,21 @@ const LayoutEditor = (props: LayoutEditorProps) => {
   useEffect(() => {
     // log.info("Running LayerData useEffect");
     const localShowDefaults = store.get("settings.showDefaults") as boolean;
-    let cLayer = currentLayer;
+    const renderData = getLayerRenderData({
+      keymap,
+      layerIndex: currentLayer,
+      showDefaults: localShowDefaults,
+      macros,
+      superkeys,
+    });
 
-    if (!localShowDefaults) {
-      if (currentLayer < keymap.default.length && !keymap.onlyCustom) {
-        cLayer = 0;
-      }
-    }
-
-    let localLayerData: KeyType[];
-    let localIsReadOnly;
-    if (keymap.onlyCustom) {
-      localIsReadOnly = cLayer < 0;
-      localLayerData = localIsReadOnly ? keymap.default[cLayer + keymap.default.length] : keymap.custom[cLayer];
-    } else {
-      localIsReadOnly = cLayer < keymap.default.length;
-      localLayerData = localIsReadOnly ? keymap.default[cLayer] : keymap.custom[cLayer - keymap.default.length];
-    }
-
-    if (localLayerData !== undefined) {
-      localLayerData = localLayerData.map(key => {
-        const newMKey = key;
-        if (key.extraLabel === "MACRO") {
-          const MNumber = key.keyCode - 53852;
-          if (
-            macros[MNumber] !== undefined &&
-            macros[MNumber].name !== undefined &&
-            macros[MNumber].name.substring(0, 5) !== "" &&
-            typeof key.label === "string" &&
-            !/\p{L}/u.test(key.label)
-          ) {
-            log.info("macros:", macros);
-            newMKey.label = macros[MNumber].name.substring(0, 5);
-          }
-        }
-        return newMKey;
-      });
-    }
-
-    if (localLayerData !== undefined && superkeys.length > 0) {
-      localLayerData = localLayerData.map(key => {
-        const newSKey = key;
-        if (key.extraLabel === "SUPER") {
-          const SKNumber = key.keyCode - 53980;
-          if (
-            superkeys.length > SKNumber &&
-            superkeys[SKNumber] !== undefined &&
-            superkeys[SKNumber].name !== undefined &&
-            superkeys[SKNumber].name !== "" &&
-            typeof key.label === "string" &&
-            !/\p{L}/u.test(key.label)
-          ) {
-            newSKey.label = superkeys[SKNumber].name.substring(0, 5);
-          }
-        }
-        return newSKey;
-      });
-    }
-    // log.info("SAVING USEFFECT!!:", localLayerData, localIsReadOnly, localShowDefaults, cLayer);
-    setLayerData(localLayerData);
-    setIsReadOnly(localIsReadOnly);
+    setLayerData(renderData?.keymap || []);
+    setIsReadOnly(renderData?.isReadOnly || false);
     setShowDefaults(localShowDefaults);
-    setCurrentLayer(cLayer);
+    setCurrentLayer(renderData?.index ?? currentLayer);
   }, [keymap, currentLayer, macros, superkeys]);
 
   const { Layer } = getLayout();
-  if (!Layer) {
-    return <div />;
-  }
 
   const copyCustomItems = keymap
     ? keymap.custom.map((_: unknown, id: number) => {
@@ -1650,6 +1628,38 @@ const LayoutEditor = (props: LayoutEditorProps) => {
       : [];
   const copyFromLayerOptions = (copyDefaultItems || []).concat(copyCustomItems);
 
+  const printSuperkeyActionLabels = [
+    i18n.editor.superkeys.actions.tapLabel,
+    i18n.editor.superkeys.actions.holdLabel,
+    i18n.editor.superkeys.actions.tapAndHoldLabel,
+    i18n.editor.superkeys.actions.doubleTapLabel,
+    i18n.editor.superkeys.actions.doubleTapAndHoldLabel,
+  ];
+  const printableMacros = macros || [];
+  const printableSuperkeys = superkeys || [];
+  const namedMacros = printableMacros
+    .map((macro, index) => ({
+      id: macro.id ?? index,
+      name: printableName(macro.name),
+    }))
+    .filter(macro => macro.name !== "");
+  const namedSuperkeys = printableSuperkeys
+    .map((superkey, index) => ({
+      id: superkey.id ?? index,
+      name: printableName(superkey.name),
+      actions: printSuperkeyActionLabels.map((label, actionIndex) => ({
+        label,
+        value: formatPrintKeyLabel({
+          keyCode: superkey.actions[actionIndex],
+          keymapDB,
+          macros: printableMacros,
+          superkeys: printableSuperkeys,
+          noKeyCode: printNoKeyCode,
+        }),
+      })),
+    }))
+    .filter(superkey => superkey.name !== "");
+
   const layerMenu =
     keymap && keymap.custom.length > 0
       ? keymap.custom.map((_, index) => {
@@ -1660,6 +1670,100 @@ const LayoutEditor = (props: LayoutEditorProps) => {
           };
         })
       : [];
+
+  const printableLayers = layerMenu
+    .map(item => item.id)
+    .map(index => {
+      const printLayer = getLayerRenderData({
+        keymap,
+        layerIndex: index,
+        showDefaults,
+        macros,
+        superkeys,
+      });
+      if (printLayer === undefined) return undefined;
+      return {
+        ...printLayer,
+        keymap: printLayer.keymap.map(withoutPrintNoKeyLabels),
+        name: layerName(printLayer.index),
+      };
+    })
+    .filter((printLayer): printLayer is PrintableLayer => printLayer !== undefined);
+  const printablePageCount = printableLayers.length + (namedSuperkeys.length > 0 ? 1 : 0) + (namedMacros.length > 0 ? 1 : 0);
+
+  useEffect(() => {
+    if (!printRenderActive) {
+      return () => {};
+    }
+
+    if (printablePageCount === 0 || printPdfPath === "") {
+      setPrintRenderActive(false);
+      return () => {};
+    }
+
+    let cancelled = false;
+    let printFrame = 0;
+    const cleanupPrintState = () => {
+      document.documentElement.classList.remove(printBodyClass);
+      document.body.classList.remove(printBodyClass);
+      setPrintRenderActive(false);
+      setPrintPdfPath("");
+    };
+
+    const renderFrame = window.requestAnimationFrame(() => {
+      document.documentElement.classList.add(printBodyClass);
+      document.body.classList.add(printBodyClass);
+      printFrame = window.requestAnimationFrame(() => {
+        if (cancelled) return;
+        ipcRenderer
+          .invoke("print-to-pdf", printPdfPath)
+          .then((savedPath: string) => {
+            if (cancelled) return;
+            toast.success(
+              <ToastMessage
+                title={i18n.editor.layers.printPdfSavedTitle}
+                content={`${i18n.editor.layers.printPdfSavedContent} ${savedPath}`}
+                icon={<IconArrowUpWithLine />}
+              />,
+              {
+                autoClose: 3000,
+                icon: "",
+              },
+            );
+          })
+          .catch(error => {
+            if (cancelled) return;
+            log.error(error);
+            toast.error(
+              <ToastMessage
+                title={i18n.editor.layers.printPdfFailedTitle}
+                content={`${i18n.editor.layers.printPdfFailedContent} ${error}`}
+                icon={<IconArrowUpWithLine />}
+              />,
+              {
+                autoClose: 5000,
+                icon: "",
+              },
+            );
+          })
+          .finally(() => {
+            if (!cancelled) cleanupPrintState();
+          });
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(renderFrame);
+      window.cancelAnimationFrame(printFrame);
+      document.documentElement.classList.remove(printBodyClass);
+      document.body.classList.remove(printBodyClass);
+    };
+  }, [printPdfPath, printRenderActive, printablePageCount]);
+
+  if (!Layer) {
+    return <div />;
+  }
 
   let code: SegmentedKeyType = {
     base: 0,
@@ -1696,6 +1800,93 @@ const LayoutEditor = (props: LayoutEditorProps) => {
     </div>
     // </fade>
   );
+
+  const renderPrintableLayer = (printLayer: PrintableLayer) => (
+    <section key={`print-layer-${printLayer.index}`} className="layout-print-sheet">
+      <header className="layout-print-sheet-header">
+        <div>
+          <h2 className="layout-print-sheet-title">
+            {i18n.editor.layers.printLayerTitle} {printLayer.index + 1}: {printLayer.name || i18n.general.noname}
+          </h2>
+        </div>
+        <p className="layout-print-sheet-meta">{deviceName}</p>
+      </header>
+      <div className="layout-print-keyboard">
+        <div className="LayerHolder">
+          <Layer
+            readOnly={printLayer.isReadOnly}
+            index={printLayer.index}
+            keymap={printLayer.keymap}
+            onKeySelect={noopKeySelect}
+            selectedKey={-1}
+            selectedLED={-1}
+            palette={palette}
+            colormap={colorMap[printLayer.index] || []}
+            darkMode={false}
+            style={{ width: "100%" }}
+            showUnderglow={false}
+            className={`svg-${deviceName.toLowerCase()} raiseKeyboard layer h-auto`}
+            isStandardView={false}
+          />
+        </div>
+      </div>
+    </section>
+  );
+
+  const renderPrintReferenceHeader = (title: string) => (
+    <header className="layout-print-sheet-header">
+      <div>
+        <h2 className="layout-print-sheet-title">{title}</h2>
+      </div>
+      <p className="layout-print-sheet-meta">{deviceName}</p>
+    </header>
+  );
+
+  const renderPrintableSuperkeys = () =>
+    namedSuperkeys.length > 0 ? (
+      <section key="print-superkeys" className="layout-print-sheet layout-print-reference-sheet">
+        {renderPrintReferenceHeader(i18n.editor.layers.printSuperkeysTitle)}
+        <table className="layout-print-reference-table">
+          <thead>
+            <tr>
+              <th>{i18n.editor.layers.printNameColumn}</th>
+              {printSuperkeyActionLabels.map(label => (
+                <th key={`print-superkey-action-${label}`}>{label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {namedSuperkeys.map(superkey => (
+              <tr key={`print-superkey-${superkey.id}`}>
+                <th scope="row">{superkey.name}</th>
+                {superkey.actions.map(action => (
+                  <td key={`print-superkey-${superkey.id}-${action.label}`}>{action.value}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    ) : (
+      ""
+    );
+
+  const renderPrintableMacros = () =>
+    namedMacros.length > 0 ? (
+      <section key="print-macros" className="layout-print-sheet layout-print-reference-sheet">
+        {renderPrintReferenceHeader(i18n.editor.layers.printMacrosTitle)}
+        <div className="layout-print-macro-grid">
+          {namedMacros.map(macro => (
+            <div key={`print-macro-${macro.id}`} className="layout-print-macro-item">
+              <span className="layout-print-reference-index">#{macro.id + 1}</span>
+              <span>{macro.name}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+    ) : (
+      ""
+    );
 
   return (
     <Styles className="layoutEditor h-full">
@@ -1801,6 +1992,16 @@ const LayoutEditor = (props: LayoutEditorProps) => {
           currentLayer={currentLayer}
         />
       </motion.div>
+
+      {printRenderActive ? (
+        <div className="layout-print-root">
+          {printableLayers.map(printLayer => renderPrintableLayer(printLayer))}
+          {renderPrintableSuperkeys()}
+          {renderPrintableMacros()}
+        </div>
+      ) : (
+        ""
+      )}
 
       <Dialog open={showMacroModal} onOpenChange={toggleMacroModal}>
         <DialogContent>

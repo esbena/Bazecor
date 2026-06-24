@@ -127,8 +127,18 @@ const English = {
       title: "Layers",
       layerLock: "Layer Lock",
       layerLockDescription: "Tap to permanently move to another layer.",
-      exportToPdf: "Export layouts to pdf",
+      exportToPdf: "Save layouts as PDF",
       layerToCopy: "You will copy the layout of this layer",
+      printLayerTitle: "Layer",
+      printSuperkeysTitle: "Superkeys",
+      printMacrosTitle: "Macros",
+      printNameColumn: "Name",
+      printSaveDialogTitle: "Save keyboard layouts PDF",
+      printSaveDialogButton: "Save PDF",
+      printPdfSavedTitle: "PDF saved",
+      printPdfSavedContent: "Saved to",
+      printPdfFailedTitle: "PDF export failed",
+      printPdfFailedContent: "Bazecor could not save the PDF:",
     },
     clear: {
       title: "Clear keymap",
@@ -470,11 +480,9 @@ const English = {
       memoryUsage: {
         title: "Superkeys Memory Usage",
         errorTitle: "You exceeded the maximum capacity of Superkeys.",
-        errordBody:
-          "Please decrease the number of Superkeys until the Memory Usage indicator is no longer red.",
+        errordBody: "Please decrease the number of Superkeys until the Memory Usage indicator is no longer red.",
         alertTitle: "You are almost out of Superkeys",
-        alertBody:
-          "Everything will still work perfectly but consider deleting Superkeys you don't use to continue adding more.",
+        alertBody: "Everything will still work perfectly but consider deleting Superkeys you don't use to continue adding more.",
       },
     },
     oldMacroModal: {
